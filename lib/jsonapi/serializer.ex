@@ -99,7 +99,7 @@ defmodule JSONAPI.Serializer do
     rel_url = parent_view.url_for_rel(parent_data, rel_key, conn)
 
     # Build the relationship
-    relation = encode_relation(entity, {rel_view, rel_key, rel_data, rel_url, conn})
+    relation = encode_relation(entity, {rel_view, relationship_name, rel_data, rel_url, conn})
 
     acc =
       if is_map(relation) and map_size(relation) > 0 do
@@ -205,8 +205,8 @@ defmodule JSONAPI.Serializer do
   end
 
   @spec encode_relation(map(), tuple()) :: map()
-  def encode_relation(entity, {rel_view, rel_key, rel_data, _rel_url, _conn} = info) do
-    encoded_rel_data = encode_rel_data(entity, rel_key, rel_view, rel_data)
+  def encode_relation(entity, {rel_view, rel_name, rel_data, _rel_url, _conn} = info) do
+    encoded_rel_data = encode_rel_data(entity, rel_name, rel_view, rel_data)
 
     data =
       if encoded_rel_data do
@@ -215,7 +215,7 @@ defmodule JSONAPI.Serializer do
         %{}
       end
 
-    merge_related_links(data, info, remove_links?())
+    merge_related_links(entity, data, info, remove_links?())
   end
 
   defp merge_base_links(%{links: links} = doc, data, view, conn) do
@@ -243,13 +243,14 @@ defmodule JSONAPI.Serializer do
   defp merge_links(doc, _data, _view, _conn, _page, _remove_links, _options), do: doc
 
   defp merge_related_links(
+         entity,
          encoded_data,
-         {rel_view, _rel_key, rel_data, rel_url, conn},
+         {rel_view, rel_name, rel_data, rel_url, conn},
          false = _remove_links
        ) do
     rel_data =
-      if id = encoded_data[:data][:id] do
-        %{id: id}
+      if rel_id = get_rel_id(entity, rel_name) do
+        %{id: rel_id}
       else
         rel_data
       end
@@ -263,21 +264,21 @@ defmodule JSONAPI.Serializer do
     end
   end
 
-  defp merge_related_links(encoded_rel_data, _info, _remove_links), do: encoded_rel_data
+  defp merge_related_links(_entity, encoded_rel_data, _info, _remove_links), do: encoded_rel_data
 
   @spec encode_rel_data(map(), String.t(), module(), map() | list()) :: map() | nil
-  def encode_rel_data(_entity, _key, _view, nil), do: nil
+  def encode_rel_data(_entity, _name, _view, nil), do: nil
 
-  def encode_rel_data(entity, key, view, data) when is_list(data) do
-    Enum.map(data, &encode_rel_data(entity, key, view, &1))
+  def encode_rel_data(entity, name, view, data) when is_list(data) do
+    Enum.map(data, &encode_rel_data(entity, name, view, &1))
   end
 
-  def encode_rel_data(entity, key, view, data) do
+  def encode_rel_data(entity, name, view, data) do
     id =
       if assoc_loaded?(data) do
         view.id(data)
       else
-        Map.get(entity, :"#{key}_id")
+        get_rel_id(entity, name)
       end
 
     if id do
@@ -285,6 +286,17 @@ defmodule JSONAPI.Serializer do
         type: view.type(),
         id: id
       }
+    end
+  end
+
+  defp get_rel_id(entity, name) do
+    value = Map.get(entity, name)
+
+    if is_map(value) && Map.get(value, :__cardinality__) == :one do
+      owner_key = entity.__struct__.__schema__(:association, name).owner_key
+      Map.get(entity, owner_key)
+    else
+      nil
     end
   end
 

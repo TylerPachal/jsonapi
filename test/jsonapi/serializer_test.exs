@@ -3,11 +3,47 @@ defmodule JSONAPI.SerializerTest do
 
   alias JSONAPI.{Config, QueryParser, Serializer}
 
+  defmodule Post do
+    use Ecto.Schema
+
+    schema "posts" do
+      field :text, :string
+      field :body, :string
+      field :full_description, :string
+      field :inserted_at, :naive_datetime
+
+      belongs_to :author, User
+      has_many :best_comments, Comment
+    end
+  end
+
+  defmodule User do
+    use Ecto.Schema
+
+    schema "users" do
+      field :username, :string
+      field :first_name, :string
+      field :last_name, :string
+
+      has_many :posts, Post
+    end
+  end
+
+  defmodule Comment do
+    use Ecto.Schema
+
+    schema "comments" do
+      field :text, :string
+
+      belongs_to :author, User
+    end
+  end
+
   defmodule PostView do
     use JSONAPI.View
 
     def fields, do: [:text, :body, :full_description, :inserted_at]
-    def meta(data, _conn), do: %{meta_text: "meta_#{data[:text]}"}
+    def meta(data, _conn), do: %{meta_text: "meta_#{data.text}"}
     def type, do: "mytype"
 
     def relationships do
@@ -295,7 +331,7 @@ defmodule JSONAPI.SerializerTest do
   end
 
   test "serialize handles NotLoaded relationships" do
-    data = %{
+    data = %Post{
       id: 1,
       text: "Hello",
       body: "Hello world",
@@ -314,7 +350,7 @@ defmodule JSONAPI.SerializerTest do
 
     relationships = Serializer.serialize(PostView, data, nil)[:data][:relationships]
 
-    assert relationships == %{
+    assert %{
              author: %{
                data: %{
                  id: 2,
@@ -331,7 +367,7 @@ defmodule JSONAPI.SerializerTest do
                  self: "/mytype/1/relationships/best_comments"
                }
              }
-           }
+           } == relationships
   end
 
   test "serialize handles a nil relationship" do
